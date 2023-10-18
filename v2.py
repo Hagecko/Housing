@@ -8,7 +8,10 @@ import plotly.express as px
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import GridSearchCV
 
 #===========================================================================
 #===========================================================================
@@ -76,33 +79,98 @@ dataset = dataset.drop('Id', axis=1)
 #===========================================================================
 # Prepare dataset
 #===========================================================================
-numeric_cols = dataset.select_dtypes(include=['int64', 'float64'])
+numeric_cols = dataset.select_dtypes(include=['int64', 'float64']).columns
 categorical_cols = dataset.select_dtypes(include=['object']).columns
 
-dataset[numeric_cols] = dataset[numeric_cols].fillna(dataset[numeric_cols].mean())
+#print(dataset.info())
+dataset[numeric_cols] = dataset[numeric_cols].fillna(dataset[numeric_cols].mean(), axis=0)
+#print(dataset.info())
 dataset[categorical_cols] = dataset[categorical_cols].fillna(dataset[categorical_cols].mode().iloc[0])
-print(dataset.info())
+#print(dataset.info())
 dataset = pd.get_dummies(dataset, columns=categorical_cols, drop_first=True)
-print(dataset.info())
+#print(dataset.info())
 y = dataset['SalePrice']
 X = dataset.drop('SalePrice', axis=1)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+#X = X[top_feature_names]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
 #print(X_train.info())
 #print(X_test.info())
-# Use encodings for category columns
-
 #===========================================================================
 # Create and train random forest regressor
 #===========================================================================
-rf_regressor = RandomForestRegressor(n_estimators=100, random_state=42)
-
+rf_regressor = RandomForestRegressor(n_estimators=300, random_state=42)
+#rf_regressor = RandomForestRegressor(max_depth=10, min_samples_split=10, n_estimators=300, random_state=42)
 rf_regressor.fit(X_train, y_train)
+#===========================================================================
+# perform a scikit-learn Recursive Feature Elimination (RFE)
+#===========================================================================
+# here we want only 50 final feature, we do this to produce a ranking
+# n_features_to_select = 50
+# rfe = RFE(rf_regressor, n_features_to_select=n_features_to_select)
 
+# rfe.fit(X_train, y_train)
+#===========================================================================
+# Use grid search for hyperparameter optimation
+#===========================================================================
+param_grid = {
+    'n_estimators': [100, 200, 300, 400, 500, 600],
+    'max_depth': [None, 10, 20, 30],
+    'min_samples_split': [2, 5, 10, 20],
+    'min_samples_leaf': [1, 2, 4, 8],
+    #'max_features': ['auto', 'sqrt', 'log2', None],
+    #'bootstrap': [True, False],
+    #'oob_score': [True, False],
+    #'random_state': [42],  # A specific random state for reproducibility
+    #'criterion': ['mse', 'mae'],
+    #'n_jobs': [-1],  # Use all available CPU cores
+    #'warm_start': [True, False]
+    # Add other hyperparameters and their parameter space
+}
+
+grid_search = GridSearchCV(estimator=rf_regressor, param_grid=param_grid, scoring='neg_mean_squared_error', cv=5)
+grid_search.fit(X_train, y_train)
+
+best_params = grid_search.best_params_
+best_rf_regressor = grid_search.best_estimator_
+
+print(best_params)
+print(best_rf_regressor)
 #===========================================================================
 # Make predictions on the test data and evaluate the model using Mean Squared Error (MSE)
 #===========================================================================
 y_pred = rf_regressor.predict(X_test)
+# y_pred = rfe.predict(X_test)
 
 mse = mean_squared_error(y_test, y_pred)
 print("Mean Squared Error:", mse)
+
+# sns.regplot(x=y_test, y=y_pred)
+# plt.xlabel("Actual Values")
+# plt.ylabel("Predicted Values")
+# plt.title("Regression Plot")
+# plt.show()
+
+#===========================================================================
+# Check if some features can be omitted
+#===========================================================================
+# Get feature importances from the trained RandomForestRegressor
+# feature_importances = rf_regressor.feature_importances_
+
+# Get the names of the features (column names from your DataFrame)
+# feature_names = X_train.columns
+
+# Sort features by their importance
+# sorted_idx = feature_importances.argsort()[::-1]
+#sorted_idx.tofile("sorted_idx.csv", delimeter=',')
+#sorted_idx = np.array(sorted_idx)
+#np.savetxt("sorted_idx.csv",sorted_idx, delimiter=',')
+#print(sorted_idx)
+#print(feature_importances)
+# Create a bar plot of feature importances
+# plt.figure(figsize=(12, 6))
+# plt.title("Feature Importances")
+# plt.bar(range(X_train.shape[1]), feature_importances[sorted_idx], align="center")
+# plt.xticks(range(X_train.shape[1]), [feature_names[i] for i in sorted_idx], rotation=90)
+# plt.tight_layout()
+# plt.show()
